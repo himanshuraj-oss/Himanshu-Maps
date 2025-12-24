@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Himanshu Maps Ultimate</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg: #000000;
+            --surface: #121212;
+            --surface-light: #1e1e1e;
+            --primary: #00ff41; /* Neon Green */
+            --danger: #ff3333;
+            --text: #ffffff;
+            --text-sec: #aaaaaa;
+        }
+
+        /* FIX SIDEBAR LAYOUT ISSUES */
+        * { box-sizing: border-box; }
+
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+        /* MAP & FILTERS */
+        #map { height: 100vh; width: 100%; z-index: 1; background: #000; }
+        .dark-mode-filter { filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(1.2); }
+        .natural-filter { filter: none; }
+        .traffic-layer { filter: invert(1) hue-rotate(180deg) brightness(1.2) !important; }
+
+        /* DYNAMIC ISLAND */
+        .dynamic-island {
+            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            width: 0; height: 35px; background: black; border-radius: 25px;
+            z-index: 3000; transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            display: flex; align-items: center; justify-content: center; overflow: hidden;
+            color: var(--primary); white-space: nowrap; box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            opacity: 0;
+        }
+        .dynamic-island.active { width: 220px; opacity: 1; }
+        .island-content { display: flex; align-items: center; gap: 10px; font-weight: bold; font-size: 14px; }
+        .island-spinner { width: 15px; height: 15px; border: 2px solid #333; border-top: 2px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* BRANDING */
+        .branding {
+            position: absolute; bottom: 25px; right: 10px; z-index: 1000;
+            background: rgba(0,0,0,0.8); color: var(--primary);
+            padding: 5px 12px; border-radius: 20px; font-weight: bold;
+            font-size: 14px; border: 1px solid var(--primary);
+            pointer-events: none; text-transform: uppercase; letter-spacing: 1px;
+        }
+
+        /* SEARCH BAR */
+        .main-search {
+            position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 450px; height: 50px;
+            background: var(--surface); border-radius: 25px;
+            display: flex; align-items: center; padding: 0 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 2000; border: 1px solid #333;
+        }
+        .main-search input {
+            flex: 1; background: transparent; border: none; color: white;
+            font-size: 16px; padding: 0 10px; outline: none;
+        }
+        .mic-btn { color: var(--primary); padding: 10px; cursor: pointer; }
+        .mic-btn.listening { color: var(--danger); animation: pulse-mic 1s infinite; }
+        @keyframes pulse-mic { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        /* SUGGESTIONS */
+        .suggestions-box {
+            position: absolute; top: 115px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 450px; background: var(--surface);
+            border-radius: 12px; z-index: 2100; display: none; border: 1px solid #333;
+        }
+        .s-row { padding: 12px 15px; border-bottom: 1px solid #222; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+
+        /* DRAWER */
+        .drawer-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); z-index: 2999; display: none; backdrop-filter: blur(5px);
+        }
+        .drawer {
+            position: fixed; top: 0; left: 0; width: 85%; max-width: 380px; height: 100%;
+            background: var(--surface); z-index: 3000;
+            transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; flex-direction: column; border-right: 1px solid #333;
+        }
+        .drawer.open { transform: translateX(0); }
+        .drawer-handle-area { position: absolute; right: -20px; top: 0; width: 20px; height: 100%; z-index: 3001; }
+
+        .drawer-header { padding: 20px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .drawer-content { padding: 15px; overflow-y: auto; flex: 1; }
+
+        /* Route Inputs */
+        .route-inputs { display: flex; flex-direction: column; gap: 15px; background: var(--surface-light); padding: 15px; border-radius: 12px; margin-bottom: 20px; }
+        .input-row { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #333; padding-bottom: 8px; }
+        .input-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .input-row input { background: transparent; border: none; color: white; width: 100%; font-size: 15px; outline: none; }
+        .drawer-suggestions { background: #252525; border-radius: 8px; margin-top: 5px; max-height: 200px; overflow-y: auto; display: none; }
+
+        /* Modes - Updated Grid */
+        .modes-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+        .mode-item {
+            display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 12px;
+            background: var(--surface-light); border-radius: 8px; font-size: 12px;
+            color: var(--text-sec); border: 1px solid transparent; cursor: pointer;
+        }
+        .mode-item.active { border-color: var(--primary); color: var(--primary); background: rgba(0,255,65,0.05); }
+
+        /* TRANSPORT BOXES */
+        .transport-box { display: none; background: #1a1a1a; padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #333; }
+        .t-header { color: #ff9800; font-weight: bold; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        
+        .grid-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .grid-btn { 
+            background: #252525; border: 1px solid #333; color: #ccc; padding: 12px; 
+            border-radius: 8px; font-size: 12px; cursor: pointer; text-align: center;
+            display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 500;
+        }
+        .grid-btn:hover { border-color: var(--primary); color: white; background: #333; }
+
+        /* Date Picker */
+        .date-input {
+            width: 100%; background: #333; color: white; border: 1px solid #555; 
+            padding: 10px; border-radius: 6px; margin-bottom: 10px; font-family: inherit;
+        }
+
+        .app-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+        .app-btn {
+            background: #222; padding: 12px; border-radius: 8px; border: 1px solid #333;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+            font-weight: bold; font-size: 12px; cursor: pointer; transition: 0.2s; color: #fff;
+        }
+        .app-btn:active { background: #333; border-color: var(--primary); }
+
+        /* NAV DASH */
+        .nav-dash {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: var(--surface); border-top: 2px solid var(--primary);
+            z-index: 2500; transform: translateY(100%); transition: transform 0.3s ease;
+            display: flex; flex-direction: column;
+        }
+        .nav-dash.active { transform: translateY(0); }
+        .nav-top-bar { padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; background: #111; }
+
+        /* FAB */
+        .fab-stack { position: absolute; right: 15px; bottom: 120px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+        .fab { width: 45px; height: 45px; border-radius: 50%; border: none; background: var(--surface); color: var(--text); box-shadow: 0 4px 10px rgba(0,0,0,0.5); font-size: 18px; cursor: pointer; }
+
+        /* LEFT SIDE BUTTON */
+        .fab-stack-left { 
+            position: absolute; left: 15px; bottom: 120px; z-index: 1000; 
+            display: flex; flex-direction: column; gap: 10px; 
+        }
+
+        .traffic-timer { position: absolute; top: 120px; right: 20px; padding: 5px 12px; background: #000; border: 2px solid var(--primary); border-radius: 6px; z-index: 1500; display: none; color: var(--primary); font-family: monospace; }
+        
+        .leaflet-popup-content-wrapper { background: #1a1a1a; color: white; border-radius: 12px; padding: 0; overflow: hidden; }
+        .leaflet-popup-content { margin: 0; width: 220px !important; }
+        .leaflet-control-attribution { background: black !important; color: #555 !important; }
+        .leaflet-control-attribution a { color: var(--primary) !important; text-decoration: none; }
+    </style>
+</head>
+<body>
+
+    <div class="dynamic-island" id="dyn-island">
+        <div class="island-content">
+            <div class="island-spinner" id="dyn-spin"></div>
+            <span id="dyn-text">Locating you...</span>
+        </div>
+    </div>
+
+    <div class="branding">Himanshu Maps</div>
+
+    <div class="main-search">
+        <i class="fas fa-bars" style="padding:10px; color:#aaa; cursor:pointer;" onclick="toggleDrawer(true)"></i>
+        <input type="text" id="main-input" placeholder="Search Himanshu Maps..." autocomplete="off">
+        <i class="fas fa-microphone mic-btn" id="mic-btn" onclick="startVoiceSearch()"></i>
+    </div>
+    <div class="suggestions-box" id="main-suggest"></div>
+
+    <div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer(false)"></div>
+    <div class="drawer" id="app-drawer">
+        <div class="drawer-handle-area"></div>
+        <div class="drawer-header">
+            <h2 style="margin:0; color:var(--primary);">Route</h2>
+            <i class="fas fa-times" style="font-size:24px; padding:10px;" onclick="toggleDrawer(false)"></i>
+        </div>
+        
+        <div class="drawer-content">
+            <div class="route-inputs">
+                <div class="input-row">
+                    <div class="dot-start"></div>
+                    <input type="text" id="start-in" placeholder="My Location" autocomplete="off">
+                    <i class="fas fa-crosshairs" onclick="useMyLocation()" style="color:var(--primary)"></i>
+                </div>
+                <div class="drawer-suggestions" id="drawer-suggest"></div>
+                <div class="input-row">
+                    <div class="dot-end"></div>
+                    <input type="text" id="dest-in" placeholder="Choose destination" autocomplete="off">
+                </div>
+            </div>
+
+            <div class="modes-grid">
+                <div class="mode-item active" onclick="setMode('car', this)"><i class="fas fa-car"></i> Car</div>
+                <div class="mode-item" onclick="setMode('bike', this)"><i class="fas fa-motorcycle"></i> Bike</div>
+                <div class="mode-item" onclick="setMode('bus', this)"><i class="fas fa-bus"></i> Bus</div>
+                <div class="mode-item" onclick="setMode('train', this)"><i class="fas fa-train"></i> Train</div>
+                <div class="mode-item" onclick="setMode('metro', this)"><i class="fas fa-subway"></i> Metro</div>
+                <div class="mode-item" onclick="setMode('flight', this)"><i class="fas fa-plane"></i> Flight</div>
+            </div>
+
+            <div id="flight-tools" class="transport-box">
+                <div class="t-header"><i class="fas fa-plane"></i> Flight Booking</div>
+                <label style="font-size:12px; color:#aaa; margin-bottom:5px; display:block;">Departure Date:</label>
+                <input type="date" id="flight-date" class="date-input">
+                
+                <button class="grid-btn" style="width:100%; border-color:#4285F4; color:#4285F4; margin-bottom:10px;" onclick="searchFlights()">
+                    <i class="fab fa-google"></i> Search Flights on Google
+                </button>
+                <div class="grid-buttons">
+                    <div class="grid-btn" onclick="window.open('https://www.skyscanner.co.in/', '_blank')">Skyscanner</div>
+                    <div class="grid-btn" onclick="window.open('https://www.makemytrip.com/flights/', '_blank')">MakeMyTrip</div>
+                </div>
+            </div>
+
+            <div id="bus-tools" class="transport-box">
+                <div class="t-header"><i class="fas fa-bus"></i> State Bus Booking</div>
+                <div class="grid-buttons" id="bus-grid" style="grid-template-columns: repeat(2, 1fr);"></div>
+                <div style="margin-top:15px; border-top:1px solid #333; padding-top:15px;">
+                    <div class="grid-buttons">
+                        <button class="grid-btn" onclick="searchBusGoogle()" style="color:#4285F4"><i class="fab fa-google"></i> Google Bus</button>
+                        <button class="grid-btn" onclick="window.open('https://www.redbus.in/', '_blank')" style="color:#d84e55"><i class="fas fa-bus"></i> RedBus</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="metro-tools" class="transport-box">
+                <div class="t-header"><i class="fas fa-subway"></i> Metro Booking</div>
+                <div class="grid-buttons" style="grid-template-columns: repeat(3, 1fr);">
+                    <div class="grid-btn" onclick="window.open('https://www.delhimetrorail.com/', '_blank')">Delhi</div>
+                    <div class="grid-btn" onclick="window.open('https://www.mmrcl.com/', '_blank')">Mumbai</div>
+                    <div class="grid-btn" onclick="window.open('https://english.bmrc.co.in/', '_blank')">Bengaluru</div>
+                    <div class="grid-btn" onclick="window.open('https://kmrc.in/', '_blank')">Kolkata</div>
+                    <div class="grid-btn" onclick="window.open('https://chennaimetrorail.org/', '_blank')">Chennai</div>
+                    <div class="grid-btn" onclick="window.open('https://www.ltmetro.com/', '_blank')">Hyderabad</div>
+                    <div class="grid-btn" onclick="window.open('https://transport.rajasthan.gov.in/jmrc/', '_blank')">Jaipur</div>
+                    <div class="grid-btn" onclick="window.open('https://www.lmrcl.com/', '_blank')">Lucknow</div>
+                </div>
+            </div>
+
+            <div id="rail-tools" class="transport-box">
+                <div class="t-header"><i class="fas fa-train"></i> Indian Railways</div>
+                
+                <label style="font-size:12px; color:#aaa; margin-bottom:5px; display:block;">Travel Date:</label>
+                <input type="date" id="train-date" class="date-input">
+
+                <div style="display:flex; gap:5px; margin-bottom:10px;">
+                    <input type="number" id="train-no" placeholder="Train No." style="flex:1; background:#333; border:none; padding:10px; color:white; border-radius:4px;">
+                    <button onclick="trackTrain()" style="background:#ff9800; border:none; border-radius:4px; padding:0 15px; font-weight:bold;">Track</button>
+                </div>
+                <div class="grid-buttons" style="grid-template-columns: repeat(3, 1fr);">
+                    <button class="grid-btn" onclick="window.open('https://www.irctc.co.in/', '_blank')">IRCTC</button>
+                    <button class="grid-btn" onclick="window.open('https://enquiry.indianrail.gov.in/', '_blank')">NTES</button>
+                    <button class="grid-btn" onclick="findTrains()">Trains</button>
+                </div>
+            </div>
+
+            <button id="nav-btn" onclick="calculateRoute()" style="width:100%; padding:15px; background:var(--primary); color:black; font-weight:bold; border:none; border-radius:30px; font-size:16px;">
+                Start Navigation
+            </button>
+
+            <h4 style="margin: 20px 0 10px 0; color:#888; font-size:12px;">RIDE BOOKING</h4>
+            <div class="app-links">
+                <div class="app-btn" onclick="bookRide('uber')"><i class="fas fa-taxi" style="font-size:20px;"></i> <span>Uber</span></div>
+                <div class="app-btn" onclick="bookRide('ola')"><i class="fas fa-car-side" style="font-size:20px; color:#d4db1d;"></i> <span>Ola</span></div>
+                <div class="app-btn" onclick="bookRide('rapido')"><i class="fas fa-motorcycle" style="font-size:20px; color:#f5d742;"></i> <span>Rapido</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="fab-stack-left">
+        <button class="fab" onclick="window.open('https://www.openstreetmap.org/fixthemap', '_blank')" title="Add Missing Place">
+            <i class="fas fa-map-marker-alt"></i>+
+        </button>
+    </div>
+
+    <div class="fab-stack">
+        <button class="fab" onclick="toggleLayer('sat')" title="Map Type"><i class="fas fa-layer-group"></i></button>
+        <button class="fab" onclick="toggleLayer('traffic')" title="Traffic"><i class="fas fa-traffic-light"></i></button>
+        <button class="fab" onclick="centerUser()" style="color:var(--primary)"><i class="fas fa-location-arrow"></i></button>
+    </div>
+
+    <div class="nav-dash" id="nav-dash">
+        <div class="nav-top-bar">
+            <div>
+                <div style="font-size:28px; font-weight:bold; color:var(--primary)" id="nav-eta">00:00</div>
+                <div style="color:#aaa"><span id="nav-remain-dist">0 km</span> • <span id="nav-remain-time">0 min</span></div>
+            </div>
+            <div style="font-family:'Courier New'; font-size:24px; border:2px solid var(--primary); padding:5px 15px; border-radius:6px;">
+                <span id="speed-val">0</span> km/h
+            </div>
+        </div>
+        <div style="padding:20px; font-size:20px;" id="nav-instruction">Heading North...</div>
+        <button onclick="endNavigation()" style="width:100%; padding:15px; background:#333; color:var(--danger); border:none; font-weight:bold;">EXIT</button>
+    </div>
+    
+    <div class="traffic-timer" id="tf-timer">🚦 45s</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+    <script>
+        const TOMTOM_KEY = 'l1lLjL2vbIOLlK1GXJUf0BC77bJI5zQa';
+        const stateBuses = [
+            {name: "Rajasthan", url: "https://rsrtconline.rajasthan.gov.in/"}, {name: "UP (UPSRTC)", url: "https://www.upsrtconline.co.in/"},
+            {name: "Himachal", url: "https://online.hrtchp.com/"}, {name: "Uttarakhand", url: "https://utconline.uk.gov.in/"},
+            {name: "Maharashtra", url: "https://npublic.msrtcors.com/reservation-home"}, {name: "Gujarat", url: "https://www.gsrtc.in/"},
+            {name: "Andhra", url: "https://www.apsrtconline.in/"}, {name: "Telangana", url: "https://www.tsrtc.telangana.gov.in/"},
+            {name: "Karnataka", url: "https://ksrtc.in/"}, {name: "Kerala", url: "https://www.keralartc.com/"},
+            {name: "Tamil Nadu", url: "https://www.tnstc.in/"}, {name: "Punjab", url: "https://www.pepsu.in/"},
+            {name: "Haryana", url: "https://ors.hartrans.gov.in/"}, {name: "Bengal", url: "https://online.sbstcbooking.co.in/"},
+            {name: "Odisha", url: "http://osrtc.in/"}, {name: "Goa", url: "https://ktclgoa.com/"},
+            {name: "J&K", url: "https://jksrtc.co.in/"}, {name: "Assam", url: "https://astc.assam.gov.in/"}
+        ];
+
+        let map, userMarker, userLoc, routeControl;
+        let layers = {};
+        let activeInput = null;
+        let startCoords = null, destCoords = null;
+        let currentMode = 'car';
+
+        function init() {
+            // ADS REMOVED
+
+            map = L.map('map', { zoomControl: false, attributionControl: false }).setView([22.5, 79], 5);
+            L.control.attribution({prefix:false}).addAttribution('Himanshu Maps').addTo(map);
+
+            // Updated Layers: Default OpenStreetMap and Satellite
+            layers.sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { className: 'natural-filter' });
+            
+            // Default OpenStreetMap
+            layers.street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+                maxZoom: 19, 
+                attribution: '&copy; OpenStreetMap contributors' 
+            }).addTo(map);
+
+            layers.traffic = L.tileLayer(`https://{s}.api.tomtom.com/map/1/tile/traffic/flow/relative0/{z}/{x}/{y}.png?key=${TOMTOM_KEY}`, { className: 'traffic-layer', opacity: 0.9, maxZoom: 22 });
+
+            // MOST DETAILED BORDER (Official Survey of India via Fetch)
+            const dynText = document.getElementById('dyn-text');
+            const dynIsland = document.getElementById('dyn-island');
+            
+            // Show loading status
+            dynText.innerText = "Downloading 11MB Border...";
+            dynIsland.classList.add('active');
+
+            // Fetching the 11.8 MB file from DataMeet (includes POK & Aksai Chin)
+            fetch('https://raw.githubusercontent.com/datameet/maps/master/Country/india-soi.geojson')
+                .then(res => res.json())
+                .then(data => {
+                    // Add the detailed GeoJSON
+                    L.geoJSON(data, {
+                        style: { color: '#00ff41', weight: 3, fill: false, opacity: 0.9 }
+                    }).addTo(map);
+
+                    // Update UI on success
+                    dynText.innerText = "Detailed Border Active";
+                    setTimeout(() => { dynIsland.classList.remove('active'); }, 2000);
+                })
+                .catch(err => {
+                    console.error("Failed to load border", err);
+                    dynText.innerText = "Border Load Failed";
+                    setTimeout(() => { dynIsland.classList.remove('active'); }, 2000);
+                });
+
+
+            const busGrid = document.getElementById('bus-grid');
+            stateBuses.forEach(b => {
+                const btn = document.createElement('div');
+                btn.className = 'grid-btn'; btn.innerText = b.name;
+                btn.onclick = () => window.open(b.url, '_blank');
+                busGrid.appendChild(btn);
+            });
+
+            const dynSpin = document.getElementById('dyn-spin');
+            
+            map.locate({watch: true, enableHighAccuracy: true});
+            map.on('locationfound', (e) => {
+                userLoc = e.latlng;
+                // Only update text if border is not loading
+                if(dynText.innerText === "Locating you...") {
+                     dynText.innerText = "Connected"; dynSpin.style.display = 'none'; dynText.style.color = '#00ff41';
+                     setTimeout(() => { dynIsland.classList.remove('active'); }, 2000);
+                }
+                
+                if(!userMarker) {
+                    const icon = L.divIcon({ className: 'css-icon', html: '<div style="width:18px; height:18px; background:#00ff41; border-radius:50%; border:3px solid white; box-shadow:0 0 15px #00ff41;"></div>' });
+                    userMarker = L.marker(e.latlng, {icon: icon}).addTo(map);
+                } else userMarker.setLatLng(e.latlng);
+                if(document.getElementById('nav-dash').classList.contains('active')) document.getElementById('speed-val').innerText = e.speed ? Math.round(e.speed * 3.6) : 0;
+            });
+
+            const drawer = document.getElementById('app-drawer');
+            let startY = 0;
+            drawer.addEventListener('touchstart', e => { startY = e.touches[0].clientY; }, {passive: true});
+            drawer.addEventListener('touchmove', e => { if((e.touches[0].clientY - startY) > 50) toggleDrawer(false); }, {passive: true});
+
+            map.on('click', async (e) => {
+                const { lat, lng } = e.latlng;
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const data = await res.json();
+                const fullName = data.display_name;
+                const shortName = fullName.split(',')[0];
+                let wikiData = null;
+                try {
+                    const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(shortName)}`);
+                    if(wikiRes.ok) wikiData = await wikiRes.json();
+                } catch(err) {}
+                const imgSrc = (wikiData && wikiData.thumbnail) ? wikiData.thumbnail.source : null;
+                const desc = (wikiData && wikiData.extract) ? wikiData.extract : (data.address.city || "Location details");
+                const popupHtml = `
+                    <div style="font-family:sans-serif; min-width:200px;">
+                        ${imgSrc ? `<img src="${imgSrc}" style="width:100%; height:120px; object-fit:cover; border-radius:8px 8px 0 0; display:block;">` : ''}
+                        <div style="padding:10px;">
+                            <h3 style="margin:0 0 5px 0; color:#00ff41; font-size:16px;">${shortName}</h3>
+                            <p style="font-size:11px; color:#ccc; margin:0 0 10px 0; line-height:1.4;">${desc.substring(0, 100)}...</p>
+                            <div style="display:flex; gap:5px;">
+                                <button onclick="setDest(${lat}, ${lng}, '${shortName.replace(/'/g, "\\'")}')" style="flex:1; background:#00ff41; border:none; padding:8px; font-weight:bold; border-radius:4px; cursor:pointer;">Navigate</button>
+                                <button onclick="window.open('https://www.google.com/search?q=${encodeURIComponent(fullName)}', '_blank')" style="flex:1; background:#333; color:white; border:1px solid #555; padding:8px; border-radius:4px; cursor:pointer;">More Info</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                L.popup({closeButton:false}).setLatLng(e.latlng).setContent(popupHtml).openOn(map);
+            });
+        }
+
+        const inputs = ['main-input', 'start-in', 'dest-in'];
+        inputs.forEach(id => {
+            document.getElementById(id).addEventListener('focus', () => activeInput = id);
+            document.getElementById(id).addEventListener('input', (e) => handleSearch(e.target.value));
+        });
+
+        async function handleSearch(query) {
+            if(query.length < 3) { document.getElementById('main-suggest').style.display='none'; document.getElementById('drawer-suggest').style.display='none'; return; }
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=in&limit=5`);
+            const data = await res.json();
+            let box = activeInput === 'main-input' ? document.getElementById('main-suggest') : document.getElementById('drawer-suggest');
+            box.innerHTML = ''; box.style.display = 'block';
+            data.forEach(p => {
+                const div = document.createElement('div'); div.className = 's-row';
+                div.innerHTML = `<div><b>${p.display_name.split(',')[0]}</b><br><small style="color:#888">${p.display_name.substring(0,30)}...</small></div>`;
+                div.onclick = () => selectPlace(p); box.appendChild(div);
+            });
+        }
+
+        function selectPlace(p) {
+            const name = p.display_name.split(',')[0]; const coords = L.latLng(p.lat, p.lon);
+            document.getElementById('main-suggest').style.display = 'none'; document.getElementById('drawer-suggest').style.display = 'none';
+            if(activeInput === 'main-input' || activeInput === 'dest-in') {
+                destCoords = coords; document.getElementById('dest-in').value = name; document.getElementById('main-input').value = name;
+                L.marker(coords, {icon: L.divIcon({html:'<i class="fas fa-map-pin" style="color:#ff3333; font-size:30px;"></i>', className:'d'})}).addTo(map);
+                map.setView(coords, 16);
+            } else if (activeInput === 'start-in') { startCoords = coords; document.getElementById('start-in').value = name; }
+        }
+
+        function setDest(lat, lng, name) { destCoords = L.latLng(lat, lng); document.getElementById('dest-in').value = name; toggleDrawer(true); }
+
+        function startVoiceSearch() {
+            if (!('webkitSpeechRecognition' in window)) return alert("Voice not supported.");
+            const recognition = new webkitSpeechRecognition();
+            const btn = document.getElementById('mic-btn'); recognition.lang = 'en-IN';
+            recognition.onstart = () => btn.classList.add('listening');
+            recognition.onend = () => btn.classList.remove('listening');
+            recognition.onresult = (e) => { document.getElementById('main-input').value = e.results[0][0].transcript; handleSearch(e.results[0][0].transcript); };
+            recognition.start();
+        }
+
+        function setMode(m, el) {
+            currentMode = m; document.querySelectorAll('.mode-item').forEach(x => x.classList.remove('active')); el.classList.add('active');
+            ['bus-tools', 'metro-tools', 'rail-tools', 'flight-tools'].forEach(id => document.getElementById(id).style.display='none');
+            document.getElementById('nav-btn').style.display = 'block';
+            if(m === 'bus') { document.getElementById('bus-tools').style.display='block'; document.getElementById('nav-btn').style.display='none'; }
+            else if(m === 'metro') { document.getElementById('metro-tools').style.display='block'; document.getElementById('nav-btn').style.display='none'; }
+            else if(m === 'train') { document.getElementById('rail-tools').style.display='block'; document.getElementById('nav-btn').style.display='none'; }
+            else if(m === 'flight') { document.getElementById('flight-tools').style.display='block'; document.getElementById('nav-btn').style.display='none'; }
+        }
+
+        function searchBusGoogle() { window.open(`https://www.google.com/search?q=bus+from+${document.getElementById('start-in').value}+to+${document.getElementById('dest-in').value}`, '_blank'); }
+        
+        function findTrains() { 
+            const d = document.getElementById('train-date').value;
+            let q = `trains from ${document.getElementById('start-in').value} to ${document.getElementById('dest-in').value}`;
+            if(d) q += ` on ${d}`;
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, '_blank'); 
+        }
+        
+        function trackTrain() { window.open(`https://www.google.com/search?q=live+running+status+train+${document.getElementById('train-no').value}`, '_blank'); }
+
+        function searchFlights() {
+            const s = document.getElementById('start-in').value || "my location";
+            const d = document.getElementById('dest-in').value;
+            const date = document.getElementById('flight-date').value;
+            if(!d) return alert("Enter Destination");
+            let q = `flights from ${s} to ${d}`;
+            if(date) q += ` on ${date}`;
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, '_blank');
+        }
+
+        function calculateRoute() {
+            if(!startCoords || !destCoords) return alert("Select Start & Destination");
+            toggleDrawer(false); if(routeControl) map.removeControl(routeControl);
+            routeControl = L.Routing.control({
+                waypoints: [startCoords, destCoords],
+                router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
+                lineOptions: { styles: [{color: '#00ff41', opacity: 0.8, weight: 6}] },
+                createMarker: () => null, show: false
+            }).addTo(map);
+            routeControl.on('routesfound', (e) => {
+                const r = e.routes[0];
+                document.getElementById('nav-dash').classList.add('active');
+                document.getElementById('nav-remain-time').innerText = Math.round(r.summary.totalTime / 60) + " min";
+                document.getElementById('nav-remain-dist').innerText = (r.summary.totalDistance / 1000).toFixed(1) + " km";
+                setTimeout(() => { document.getElementById('tf-timer').style.display='block'; }, 4000);
+            });
+        }
+        function endNavigation() { document.getElementById('nav-dash').classList.remove('active'); document.getElementById('tf-timer').style.display='none'; if(routeControl) map.removeControl(routeControl); map.setZoom(14); }
+        function bookRide(app) { 
+            let url = app === 'uber' ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[latitude]=${destCoords.lat}&dropoff[longitude]=${destCoords.lng}` 
+                     : app === 'ola' ? 'https://book.olacabs.com/' : 'https://rapido.bike/';
+            window.open(url, '_blank');
+        }
+        function toggleDrawer(open) { document.getElementById('app-drawer').classList.toggle('open', open); document.getElementById('drawer-overlay').style.display = open ? 'block' : 'none'; }
+        function useMyLocation() { if(!userLoc) return alert("Waiting for GPS..."); startCoords = userLoc; document.getElementById('start-in').value = "My Location"; }
+        function toggleLayer(type) { 
+            if(type === 'sat') { map.hasLayer(layers.sat) ? (map.removeLayer(layers.sat), layers.street.addTo(map)) : (map.removeLayer(layers.street), layers.sat.addTo(map)); }
+            if(type === 'traffic') map.hasLayer(layers.traffic) ? map.removeLayer(layers.traffic) : layers.traffic.addTo(map);
+        }
+        function centerUser() { if(userLoc) map.setView(userLoc, 17); }
+
+        init();
+    </script>
+</body>
+</html>
